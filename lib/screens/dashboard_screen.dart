@@ -14,14 +14,14 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  // Listas globales compartidas
+  // Listas globales compartidas (Añadido el campo 'stock')
   List<Map<String, dynamic>> _productsList = [
-    {'id': 'p1', 'name': 'Nutella Cookie', 'price': 260.0, 'cost': 95.0, 'description': 'Galleta artesanal rellena de abundante Nutella.'},
-    {'id': 'p2', 'name': 'S´more brownie Cookie', 'price': 250.0, 'cost': 90.0, 'description': 'Combinación de brownie, galleta y marshmallows.'},
-    {'id': 'p3', 'name': 'Red Velvet Cookie', 'price': 245.0, 'cost': 85.0, 'description': 'Galleta de terciopelo rojo con chispas de choc. blanco.'},
-    {'id': 'p4', 'name': 'Biscoff Cookie', 'price': 215.0, 'cost': 75.0, 'description': 'Galleta infusionada con crema y galleta Lotus Biscoff.'},
-    {'id': 'p5', 'name': 'Guava Cookie', 'price': 215.0, 'cost': 70.0, 'description': 'Galleta suave con relleno artesanal de guayaba.'},
-    {'id': 'p6', 'name': 'Chocolate Chips Cookie', 'price': 205.0, 'cost': 65.0, 'description': 'La clásica galleta dorada cargada de chispas.'},
+    {'id': 'p1', 'name': 'Nutella Cookie', 'price': 260.0, 'cost': 95.0, 'stock': 15, 'description': 'Galleta artesanal rellena de abundante Nutella.'},
+    {'id': 'p2', 'name': 'S´more brownie Cookie', 'price': 250.0, 'cost': 90.0, 'stock': 10, 'description': 'Combinación de brownie, galleta y marshmallows.'},
+    {'id': 'p3', 'name': 'Red Velvet Cookie', 'price': 245.0, 'cost': 85.0, 'stock': 8, 'description': 'Galleta de terciopelo rojo con chispas de choc. blanco.'},
+    {'id': 'p4', 'name': 'Biscoff Cookie', 'price': 215.0, 'cost': 75.0, 'stock': 12, 'description': 'Galleta infusionada con crema y galleta Lotus Biscoff.'},
+    {'id': 'p5', 'name': 'Guava Cookie', 'price': 215.0, 'cost': 70.0, 'stock': 5, 'description': 'Galleta suave con relleno artesanal de guayaba.'},
+    {'id': 'p6', 'name': 'Chocolate Chips Cookie', 'price': 205.0, 'cost': 65.0, 'stock': 20, 'description': 'La clásica galleta dorada cargada de chispas.'},
   ];
 
   List<Map<String, dynamic>> _salesList = [];
@@ -39,7 +39,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final productsJson = prefs.getString('dl_products');
     if (productsJson != null) {
-      _productsList = List<Map<String, dynamic>>.from(jsonDecode(productsJson));
+      final List decoded = jsonDecode(productsJson);
+      _productsList = decoded.map((item) {
+        final map = Map<String, dynamic>.from(item);
+        // Compatibilidad: Si un producto viejo no tiene stock, le asignamos 0 por defecto
+        if (!map.containsKey('stock')) {
+          map['stock'] = 0;
+        }
+        return map;
+      }).toList();
     }
 
     final salesJson = prefs.getString('dl_sales');
@@ -91,6 +99,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {});
     _saveStoredData();
   }
+  
+  // (Deja el resto del build y Scaffold igual) ...
 
   @override
   Widget build(BuildContext context) {
@@ -194,6 +204,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 // ---------------------------------------------------------
 // PESTAÑA 1: INICIO (Dashboard Dinámico)
+// ---------------------------------------------------------
 class HomeTab extends StatefulWidget {
   final List<Map<String, dynamic>> salesList;
   final List<Map<String, dynamic>> expensesList;
@@ -573,6 +584,28 @@ class _VentasTabState extends State<VentasTab> {
     return widget.salesList;
   }
 
+  // --- NUEVA FUNCIÓN: Alerta de Confirmación Genérica ---
+  Future<bool?> _showConfirmDialog(String title, String content) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title, style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold)),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A2A18)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sí, confirmar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -706,9 +739,16 @@ class _VentasTabState extends State<VentasTab> {
                                               foregroundColor: Colors.green[700],
                                               side: BorderSide(color: Colors.green[700]!),
                                             ),
-                                            onPressed: () {
-                                              setState(() => sale['estado'] = 'Completada');
-                                              widget.onUpdate();
+                                            // --- IMPLEMENTACIÓN EN EL BOTÓN COBRAR ---
+                                            onPressed: () async {
+                                              final confirm = await _showConfirmDialog(
+                                                '¿Cobrar orden?',
+                                                '¿Estás seguro de marcar la orden de ${sale['cliente']} como cobrada?',
+                                              );
+                                              if (confirm == true) {
+                                                setState(() => sale['estado'] = 'Completada');
+                                                widget.onUpdate();
+                                              }
                                             },
                                             child: const Text('Cobrar', style: TextStyle(fontSize: 12)),
                                           ),
@@ -744,34 +784,28 @@ class _VentasTabState extends State<VentasTab> {
     );
   }
 
-  void _confirmDelete(BuildContext context, int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('¿Eliminar orden?'),
-        content: const Text('Esta acción quitará el registro de la lista de ventas.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () {
-              widget.salesList.removeAt(index);
-              widget.onUpdate();
-              Navigator.pop(context);
-            },
-            child: const Text('Eliminar', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+ void _confirmDelete(BuildContext context, int index) {
+    _showConfirmDialog('¿Eliminar orden?', 'Esta acción quitará el registro y devolverá los productos al inventario.').then((confirm) {
+      if (confirm == true) {
+        // --- DEVOLVER STOCK AL INVENTARIO ---
+        final sale = widget.salesList[index];
+        for (var item in sale['items']) {
+          final pIndex = widget.productsList.indexWhere((p) => p['name'] == item['name']);
+          if (pIndex != -1) {
+            widget.productsList[pIndex]['stock'] = (widget.productsList[pIndex]['stock'] ?? 0) + (item['qty'] as int);
+          }
+        }
+        widget.salesList.removeAt(index);
+        widget.onUpdate();
+      }
+    });
   }
 
   void _showSaleModal(BuildContext context, {Map<String, dynamic>? existingSale, int? index}) {
     final clientController = TextEditingController(text: existingSale?['cliente'] ?? '');
-    String selectedPayment = existingSale?['metodoPago'] ?? 'Transferencia';
-    String selectedStatus = existingSale?['estado'] ?? 'Completada';
+    // Inician en null para estar en blanco al crear, o cargan si se está editando
+    String? selectedPayment = existingSale?['metodoPago'];
+    String? selectedStatus = existingSale?['estado'];
 
     Map<String, int> selectedQuantities = {for (var item in widget.productsList) item['name']: 0};
     if (existingSale != null) {
@@ -821,49 +855,79 @@ class _VentasTabState extends State<VentasTab> {
                     const SizedBox(height: 16),
                     const Text('Seleccionar Productos:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4A2A18))),
                     const SizedBox(height: 8),
+                    
+                    // --- LISTA DE PRODUCTOS CON VALIDACIÓN DE STOCK ---
                     ...widget.productsList.map((product) {
                       final name = product['name'] as String;
-                      final price = product['price'] as double;
+                      final price = (product['price'] as num).toDouble();
+                      final currentStock = (product['stock'] ?? 0) as int;
+                      
+                      int availableStock = currentStock;
+                      if (existingSale != null) {
+                        final oldItem = (existingSale['items'] as List).firstWhere((i) => i['name'] == name, orElse: () => <String, dynamic>{});
+                        if (oldItem.isNotEmpty) availableStock += (oldItem['qty'] as int);
+                      }
+                      
                       final qty = selectedQuantities[name] ?? 0;
+                      final isOutOfStock = availableStock <= 0;
 
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(child: Text('$name (${price.toStringAsFixed(0)} DOP\$)')),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: qty > 0 ? () => setModalState(() => selectedQuantities[name] = qty - 1) : null,
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('$name (${price.toStringAsFixed(0)} DOP\$)'),
+                                  Text(
+                                    isOutOfStock ? 'Agotado' : 'Disponibles: $availableStock',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isOutOfStock ? Colors.red : Colors.grey,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4A2A18)),
-                                onPressed: () => setModalState(() => selectedQuantities[name] = qty + 1),
-                              ),
-                            ],
-                          ),
-                        ],
+                            ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed: qty > 0 ? () => setModalState(() => selectedQuantities[name] = qty - 1) : null,
+                                ),
+                                Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4A2A18)),
+                                  onPressed: qty < availableStock ? () => setModalState(() => selectedQuantities[name] = qty + 1) : null,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       );
                     }),
+                    
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: selectedPayment,
-                            decoration: const InputDecoration(labelText: 'Pago'),
+                            decoration: const InputDecoration(labelText: 'Pago', hintText: 'Seleccionar'),
                             items: ['Transferencia', 'Efectivo'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                            onChanged: (val) => setModalState(() => selectedPayment = val!),
+                            onChanged: (val) => setModalState(() => selectedPayment = val),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: selectedStatus,
-                            decoration: const InputDecoration(labelText: 'Estado'),
+                            decoration: const InputDecoration(labelText: 'Estado', hintText: 'Seleccionar'),
                             items: ['Completada', 'Pendiente'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                            onChanged: (val) => setModalState(() => selectedStatus = val!),
+                            onChanged: (val) => setModalState(() => selectedStatus = val),
                           ),
                         ),
                       ],
@@ -878,6 +942,7 @@ class _VentasTabState extends State<VentasTab> {
                       ],
                     ),
                     const SizedBox(height: 20),
+                    
                     SizedBox(
                       width: double.infinity,
                       height: 48,
@@ -887,39 +952,102 @@ class _VentasTabState extends State<VentasTab> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: calculateTotal() == 0 || clientController.text.isEmpty
+                        onPressed: calculateTotal() == 0 || 
+                                   clientController.text.trim().isEmpty || 
+                                   selectedPayment == null || 
+                                   selectedStatus == null
                             ? null
-                            : () {
+                            : () async {
+                                final totalVenta = calculateTotal();
+                                final isEditing = existingSale != null;
+
+                                List<TextSpan> desgloseSpans = [];
+                                selectedQuantities.forEach((nombre, cantidad) {
+                                  if (cantidad > 0) {
+                                    final producto = widget.productsList.firstWhere((p) => p['name'] == nombre);
+                                    final precio = (producto['price'] as num).toDouble();
+                                    desgloseSpans.add(TextSpan(
+                                      text: '$cantidad x $nombre = ${(cantidad * precio).toStringAsFixed(2)} DOP\$\n',
+                                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                                    ));
+                                  }
+                                });
+
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text(isEditing ? 'Confirmar Actualización' : 'Confirmar Venta', style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold)),
+                                    content: SingleChildScrollView(
+                                      child: RichText(
+                                        text: TextSpan(
+                                          style: const TextStyle(fontSize: 16, color: Colors.black87),
+                                          children: [
+                                            const TextSpan(text: 'Cliente: '),
+                                            TextSpan(text: '${clientController.text.trim()}\n\n', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            const TextSpan(text: 'Detalle de la orden:\n', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF4A2A18))),
+                                            ...desgloseSpans,
+                                            const TextSpan(text: '\nTotal a cobrar: '),
+                                            TextSpan(text: '${totalVenta.toStringAsFixed(2)} DOP\$\n\n', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700], fontSize: 18)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Revisar', style: TextStyle(color: Colors.grey))),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A2A18)),
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: Text(isEditing ? 'Sí, actualizar' : 'Sí, registrar', style: const TextStyle(color: Colors.white)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirm != true) return; 
+
+                                if (isEditing && existingSale != null) {
+                                  for (var oldItem in existingSale['items']) {
+                                    final pIndex = widget.productsList.indexWhere((p) => p['name'] == oldItem['name']);
+                                    if (pIndex != -1) {
+                                      widget.productsList[pIndex]['stock'] = (widget.productsList[pIndex]['stock'] ?? 0) + (oldItem['qty'] as int);
+                                    }
+                                  }
+                                }
+
                                 final itemsList = <Map<String, dynamic>>[];
                                 selectedQuantities.forEach((key, value) {
                                   if (value > 0) {
-                                    final prod = widget.productsList.firstWhere((p) => p['name'] == key);
-                                    itemsList.add({'name': key, 'qty': value, 'price': prod['price']});
+                                    final pIndex = widget.productsList.indexWhere((p) => p['name'] == key);
+                                    if (pIndex != -1) {
+                                      widget.productsList[pIndex]['stock'] = (widget.productsList[pIndex]['stock'] ?? 0) - value;
+                                      itemsList.add({'name': key, 'qty': value, 'price': widget.productsList[pIndex]['price']});
+                                    }
                                   }
                                 });
 
                                 final saleData = {
                                   'id': existingSale?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                                  'cliente': clientController.text,
+                                  'cliente': clientController.text.trim(),
                                   'fecha': existingSale?['fecha'] ?? DateTime.now(),
-                                  'estado': selectedStatus,
-                                  'metodoPago': selectedPayment,
+                                  'estado': selectedStatus!,
+                                  'metodoPago': selectedPayment!,
                                   'items': itemsList,
-                                  'total': calculateTotal(),
+                                  'total': totalVenta,
                                 };
 
-                                if (existingSale != null && index != null) {
+                                // Ajuste fecha sintaxis segura:
+                                saleData['fecha'] = existingSale?['fecha'] ?? DateTime.now();
+
+                                if (isEditing && index != null) {
                                   widget.salesList[index] = saleData;
                                 } else {
                                   widget.salesList.insert(0, saleData);
                                 }
+                                
                                 widget.onUpdate();
-                                Navigator.pop(context);
+                                if (context.mounted) Navigator.pop(context);
                               },
-                        child: Text(
-                          existingSale == null ? 'GUARDAR VENTA' : 'ACTUALIZAR VENTA',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                        child: Text(existingSale == null ? 'GUARDAR VENTA' : 'ACTUALIZAR VENTA', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -932,7 +1060,7 @@ class _VentasTabState extends State<VentasTab> {
       },
     );
   }
-}
+} // <--- Faltaba esta llave de cierre para _VentasTabState
 
 // ---------------------------------------------------------
 // PESTAÑA 3: GASTOS (Registro Categorizado y Control Operativo)
@@ -954,10 +1082,12 @@ class GastosTab extends StatefulWidget {
 
 class _GastosTabState extends State<GastosTab> {
   String _selectedCategoryFilter = 'Todos';
-
   final List<String> _categories = ['Insumos', 'Servicios', 'Empaques', 'Otros'];
 
-  double get _totalGastos => widget.expensesList.fold(0.0, (sum, item) => sum + (item['monto'] as double));
+  double get _totalGastos => widget.expensesList.fold(
+        0.0,
+        (sum, item) => sum + ((item['monto'] as num?)?.toDouble() ?? 0.0),
+      );
 
   List<Map<String, dynamic>> get _filteredExpenses {
     if (_selectedCategoryFilter != 'Todos') {
@@ -1018,8 +1148,13 @@ class _GastosTabState extends State<GastosTab> {
                     itemCount: _filteredExpenses.length,
                     itemBuilder: (context, index) {
                       final expense = _filteredExpenses[index];
-                      final DateTime date = expense['fecha'];
+                      final DateTime date = expense['fecha'] is DateTime
+                          ? expense['fecha']
+                          : DateTime.tryParse(expense['fecha'].toString()) ?? DateTime.now();
+                      const double zeroDefault = 0.0;
+                      final double amountVal = (expense['monto'] as num?)?.toDouble() ?? zeroDefault;
                       final dateStr = '${date.day}/${date.month}/${date.year}';
+                      final actualIndex = widget.expensesList.indexOf(expense);
 
                       return Card(
                         color: const Color(0xFFF9F9F9),
@@ -1032,7 +1167,7 @@ class _GastosTabState extends State<GastosTab> {
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           title: Text(
-                            expense['concepto'],
+                            expense['concepto']?.toString() ?? '',
                             style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text(
@@ -1043,16 +1178,16 @@ class _GastosTabState extends State<GastosTab> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '-${(expense['monto'] as double).toStringAsFixed(2)} DOP\$',
+                                '-${amountVal.toStringAsFixed(2)} DOP\$',
                                 style: TextStyle(color: Colors.red[700], fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                               PopupMenuButton<String>(
                                 icon: const Icon(Icons.more_vert, color: Colors.grey),
                                 onSelected: (value) {
                                   if (value == 'edit') {
-                                    _showExpenseModal(context, existingExpense: expense, index: widget.expensesList.indexOf(expense));
+                                    _showExpenseModal(context, existingExpense: expense, index: actualIndex);
                                   } else if (value == 'delete') {
-                                    _confirmDelete(context, widget.expensesList.indexOf(expense));
+                                    _confirmDelete(context, actualIndex);
                                   }
                                 },
                                 itemBuilder: (context) => [
@@ -1097,6 +1232,7 @@ class _GastosTabState extends State<GastosTab> {
   }
 
   void _confirmDelete(BuildContext context, int index) {
+    if (index < 0 || index >= widget.expensesList.length) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1121,12 +1257,12 @@ class _GastosTabState extends State<GastosTab> {
   }
 
   void _showExpenseModal(BuildContext context, {Map<String, dynamic>? existingExpense, int? index}) {
-    final conceptController = TextEditingController(text: existingExpense?['concepto'] ?? '');
+    final conceptController = TextEditingController(text: existingExpense?['concepto']?.toString() ?? '');
     final amountController = TextEditingController(
       text: existingExpense != null ? existingExpense['monto'].toString() : '',
     );
-    String selectedCategory = existingExpense?['categoria'] ?? _categories.first;
-    String selectedPayment = existingExpense?['metodoPago'] ?? 'Transferencia';
+    String selectedCategory = existingExpense?['categoria']?.toString() ?? _categories.first;
+    String selectedPayment = existingExpense?['metodoPago']?.toString() ?? 'Transferencia';
     String? errorMessage;
 
     showModalBottomSheet(
@@ -1172,10 +1308,12 @@ class _GastosTabState extends State<GastosTab> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedCategory,
+                            value: _categories.contains(selectedCategory) ? selectedCategory : _categories.first,
                             decoration: const InputDecoration(labelText: 'Categoría'),
                             items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                            onChanged: (val) => setModalState(() => selectedCategory = val!),
+                            onChanged: (val) {
+                              if (val != null) setModalState(() => selectedCategory = val);
+                            },
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -1184,7 +1322,9 @@ class _GastosTabState extends State<GastosTab> {
                             value: selectedPayment,
                             decoration: const InputDecoration(labelText: 'Método de Pago'),
                             items: ['Transferencia', 'Efectivo'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                            onChanged: (val) => setModalState(() => selectedPayment = val!),
+                            onChanged: (val) {
+                              if (val != null) setModalState(() => selectedPayment = val);
+                            },
                           ),
                         ),
                       ],
@@ -1225,7 +1365,7 @@ class _GastosTabState extends State<GastosTab> {
                             'metodoPago': selectedPayment,
                           };
 
-                          if (existingExpense != null && index != null) {
+                          if (existingExpense != null && index != null && index >= 0 && index < widget.expensesList.length) {
                             widget.expensesList[index] = expenseData;
                           } else {
                             widget.expensesList.insert(0, expenseData);
@@ -1251,6 +1391,10 @@ class _GastosTabState extends State<GastosTab> {
   }
 }
 
+// ---------------------------------------------------------
+// PESTAÑA 4: PRODUCTOS (Gestión Dinámica y Expansión)
+// ---------------------------------------------------------
+
 class ProductosTab extends StatefulWidget {
   final List<Map<String, dynamic>> productsList;
   final VoidCallback onUpdate;
@@ -1265,9 +1409,6 @@ class ProductosTab extends StatefulWidget {
   State<ProductosTab> createState() => _ProductosTabState();
 }
 
-// ---------------------------------------------------------
-// PESTAÑA 4: PRODUCTOS (Gestión Dinámica y Expansión)
-// ---------------------------------------------------------
 class _ProductosTabState extends State<ProductosTab> {
   @override
   Widget build(BuildContext context) {
@@ -1298,89 +1439,102 @@ class _ProductosTabState extends State<ProductosTab> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: widget.productsList.length,
-              itemBuilder: (context, index) {
-                final product = widget.productsList[index];
-                final double price = product['price'];
-                final double cost = product['cost'] ?? 0.0;
-                final double margin = price - cost;
+            child: widget.productsList.isEmpty
+                ? const Center(child: Text('No hay productos en el catálogo', style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: widget.productsList.length,
+                    itemBuilder: (context, index) {
+                      final product = widget.productsList[index];
+                      final double itemPrice = (product['price'] as num?)?.toDouble() ?? 0.0;
+                      final double itemCost = (product['cost'] as num?)?.toDouble() ?? 0.0;
+                      final int itemStock = (product['stock'] as num?)?.toInt() ?? 0;
+                      final double itemMargin = itemPrice - itemCost;
 
-                return Card(
-                  color: const Color(0xFFF9F9F9),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    title: Text(
-                      product['name'],
-                      style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        Text(
-                          product['description'] ?? '',
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      return Card(
+                        color: const Color(0xFFF9F9F9),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Costo est.: ${cost.toStringAsFixed(2)} DOP\$ • Margen: ${margin.toStringAsFixed(2)} DOP\$',
-                          style: TextStyle(color: Colors.green[800], fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${price.toStringAsFixed(2)} DOP\$',
-                          style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, color: Colors.grey),
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              _showProductModal(context, existingProduct: product, index: index);
-                            } else if (value == 'delete') {
-                              _confirmDelete(context, index);
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
-                                  SizedBox(width: 8),
-                                  Text('Editar'),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                product['name']?.toString() ?? '',
+                                style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                              Text(
+                                itemStock > 0 ? 'Stock: $itemStock' : 'Agotado',
+                                style: TextStyle(
+                                  color: itemStock > 0 ? Colors.blue[700] : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(product['description']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Costo est.: ${itemCost.toStringAsFixed(2)} DOP\$ • Margen: ${itemMargin.toStringAsFixed(2)} DOP\$',
+                                style: TextStyle(color: Colors.green[800], fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${itemPrice.toStringAsFixed(2)} DOP\$',
+                                style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert, color: Colors.grey),
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _showProductModal(context, existingProduct: product, index: index);
+                                  } else if (value == 'delete') {
+                                    _confirmDeleteProduct(context, index);
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
+                                        SizedBox(width: 8),
+                                        Text('Editar'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                        SizedBox(width: 8),
+                                        Text('Eliminar'),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                  SizedBox(width: 8),
-                                  Text('Eliminar'),
-                                ],
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
@@ -1393,24 +1547,26 @@ class _ProductosTabState extends State<ProductosTab> {
     );
   }
 
-  void _confirmDelete(BuildContext context, int index) {
+  void _confirmDeleteProduct(BuildContext context, int index) {
+    if (index < 0 || index >= widget.productsList.length) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('¿Eliminar producto?'),
-        content: Text('Esta acción quitará "${widget.productsList[index]['name']}" del catálogo.'),
+        title: const Text('¿Eliminar producto?', style: TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold)),
+        content: const Text('Esta acción eliminará el producto del catálogo de forma permanente.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A2A18)),
             onPressed: () {
               widget.productsList.removeAt(index);
               widget.onUpdate();
               Navigator.pop(context);
             },
-            child: const Text('Eliminar', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -1418,14 +1574,17 @@ class _ProductosTabState extends State<ProductosTab> {
   }
 
   void _showProductModal(BuildContext context, {Map<String, dynamic>? existingProduct, int? index}) {
-    final nameController = TextEditingController(text: existingProduct?['name'] ?? '');
+    final nameController = TextEditingController(text: existingProduct?['name']?.toString() ?? '');
+    final descController = TextEditingController(text: existingProduct?['description']?.toString() ?? '');
     final priceController = TextEditingController(
       text: existingProduct != null ? existingProduct['price'].toString() : '',
     );
     final costController = TextEditingController(
       text: existingProduct != null ? existingProduct['cost'].toString() : '',
     );
-    final descController = TextEditingController(text: existingProduct?['description'] ?? '');
+    final stockController = TextEditingController(
+      text: existingProduct != null ? existingProduct['stock'].toString() : '0',
+    );
     String? errorMessage;
 
     showModalBottomSheet(
@@ -1446,7 +1605,7 @@ class _ProductosTabState extends State<ProductosTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      existingProduct == null ? 'Agregar Nuevo Producto' : 'Editar Producto',
+                      existingProduct == null ? 'Nuevo Producto' : 'Editar Producto',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF4A2A18)),
                     ),
                     const SizedBox(height: 16),
@@ -1458,14 +1617,22 @@ class _ProductosTabState extends State<ProductosTab> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    TextField(
+                      controller: descController,
+                      decoration: InputDecoration(
+                        labelText: 'Descripción',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: TextField(
-                            controller: priceController,
+                            controller: costController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: InputDecoration(
-                              labelText: 'Precio Venta (DOP\$)',
+                              labelText: 'Costo (DOP\$)',
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
@@ -1473,10 +1640,10 @@ class _ProductosTabState extends State<ProductosTab> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
-                            controller: costController,
+                            controller: priceController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: InputDecoration(
-                              labelText: 'Costo Est. (DOP\$)',
+                              labelText: 'Precio (DOP\$)',
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
@@ -1485,10 +1652,10 @@ class _ProductosTabState extends State<ProductosTab> {
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: descController,
-                      maxLines: 2,
+                      controller: stockController,
+                      keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: 'Descripción',
+                        labelText: 'Stock Inicial',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
@@ -1507,32 +1674,32 @@ class _ProductosTabState extends State<ProductosTab> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         onPressed: () {
-                          final cleanedPrice = priceController.text.replaceAll(',', '.').trim();
-                          final cleanedCost = costController.text.replaceAll(',', '.').trim();
-                          final double? price = double.tryParse(cleanedPrice);
-                          final double? cost = double.tryParse(cleanedCost);
+                          final double localCost = double.tryParse(costController.text.replaceAll(',', '.')) ?? 0.0;
+                          final double localPrice = double.tryParse(priceController.text.replaceAll(',', '.')) ?? 0.0;
+                          final int localStock = int.tryParse(stockController.text) ?? 0;
 
                           if (nameController.text.trim().isEmpty) {
-                            setModalState(() => errorMessage = 'Por favor ingresa un nombre.');
+                            setModalState(() => errorMessage = 'El nombre es obligatorio.');
                             return;
                           }
-                          if (price == null || price <= 0) {
-                            setModalState(() => errorMessage = 'Ingresa un precio de venta válido.');
+                          if (localPrice <= 0) {
+                            setModalState(() => errorMessage = 'El precio debe ser mayor a 0.');
                             return;
                           }
 
                           final productData = {
                             'id': existingProduct?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
                             'name': nameController.text.trim(),
-                            'price': price,
-                            'cost': cost ?? 0.0,
                             'description': descController.text.trim(),
+                            'cost': localCost,
+                            'price': localPrice,
+                            'stock': localStock,
                           };
 
-                          if (existingProduct != null && index != null) {
+                          if (existingProduct != null && index != null && index >= 0 && index < widget.productsList.length) {
                             widget.productsList[index] = productData;
                           } else {
-                            widget.productsList.add(productData);
+                            widget.productsList.insert(0, productData);
                           }
                           widget.onUpdate();
                           Navigator.pop(context);
