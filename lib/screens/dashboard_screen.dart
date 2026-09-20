@@ -665,114 +665,102 @@ class _VentasTabState extends State<VentasTab> {
             ),
           ),
           Expanded(
-            child: _filteredSales.isEmpty
-                ? const Center(child: Text('No hay ventas registradas', style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredSales.length,
-                    itemBuilder: (context, index) {
-                      final sale = _filteredSales[index];
-                      final isCompleted = sale['estado'] == 'Completada';
-                      final DateTime date = sale['fecha'];
-                      final dateStr = '${date.day}/${date.month}/${date.year}';
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('ventas').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('No hay ventas registradas', style: TextStyle(color: Colors.grey)));
+                }
 
-                      return Card(
-                        color: const Color(0xFFF9F9F9),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
-                        ),
-                        child: ExpansionTile(
-                          title: Text(sale['cliente'], style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold)),
-                          subtitle: Text('$dateStr • ${sale['metodoPago']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text('${(sale['total'] as double).toStringAsFixed(2)} DOP\$',
-                                  style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: isCompleted ? Colors.green[100] : Colors.orange[100],
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  sale['estado'],
-                                  style: TextStyle(
-                                    color: isCompleted ? Colors.green[800] : Colors.orange[800],
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                final docs = snapshot.data!.docs;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final saleMap = docs[index].data() as Map<String, dynamic>;
+                    final docId = docs[index].id;
+                    saleMap['id'] ??= docId;
+
+                    final String cliente = saleMap['cliente']?.toString() ?? 'Cliente general';
+                    final double total = (saleMap['total'] as num?)?.toDouble() ?? 0.0;
+                    final String estado = saleMap['estado']?.toString() ?? 'Completado';
+                    final String metodoPago = saleMap['metodoPago']?.toString() ?? 'Efectivo';
+                    final items = saleMap['items'] as List<dynamic>? ?? [];
+
+                    return Card(
+                      color: const Color(0xFFF9F9F9),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Divider(height: 1),
-                            Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            Text(
+                              cliente,
+                              style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              '${total.toStringAsFixed(2)} DOP\$',
+                              style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text('Método: $metodoPago • Estado: $estado', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Text('Artículos: ${items.length}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                          ],
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.grey),
+                          onSelected: (value) async {
+                            if (value == 'edit') {
+                              _showSaleModal(context, existingSale: saleMap, index: index);
+                            } else if (value == 'delete') {
+                              await FirebaseFirestore.instance.collection('ventas').doc(docId).delete();
+                              widget.onUpdate();
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
                                 children: [
-                                  const Text('Productos:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF4A2A18))),
-                                  const SizedBox(height: 6),
-                                  ...(sale['items'] as List).map((item) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 2.0),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text('${item['qty']}x ${item['name']}', style: const TextStyle(fontSize: 13)),
-                                            Text('${(item['qty'] * item['price']).toStringAsFixed(2)} DOP\$', style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                                          ],
-                                        ),
-                                      )),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      if (!isCompleted)
-                                        Expanded(
-                                          child: OutlinedButton(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: Colors.green[700],
-                                              side: BorderSide(color: Colors.green[700]!),
-                                            ),
-                                            // --- IMPLEMENTACIÓN EN EL BOTÓN COBRAR ---
-                                            onPressed: () async {
-                                              final confirm = await _showConfirmDialog(
-                                                '¿Cobrar orden?',
-                                                '¿Estás seguro de marcar la orden de ${sale['cliente']} como cobrada?',
-                                              );
-                                              if (confirm == true) {
-                                                setState(() => sale['estado'] = 'Completada');
-                                                widget.onUpdate();
-                                              }
-                                            },
-                                            child: const Text('Cobrar', style: TextStyle(fontSize: 12)),
-                                          ),
-                                        ),
-                                      if (!isCompleted) const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit_outlined, color: Color(0xFF4A2A18)),
-                                        onPressed: () => _showSaleModal(context, existingSale: sale, index: widget.salesList.indexOf(sale)),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                        onPressed: () => _confirmDelete(context, widget.salesList.indexOf(sale)),
-                                      ),
-                                    ],
-                                  ),
+                                  Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
+                                  SizedBox(width: 8),
+                                  Text('Editar'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                  SizedBox(width: 8),
+                                  Text('Eliminar'),
                                 ],
                               ),
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1038,9 +1026,9 @@ class _VentasTabState extends State<VentasTab> {
                                         'total': totalVenta,
                                       };
 
-                                      if (isEditing && existingSale?['id'] != null) {
+                                      if (isEditing && existingSale['id'] != null) {
                                         // Si estás editando, actualiza el documento en Firebase
-                                        await ventasDB.doc(existingSale!['id'].toString()).set(datosParaFirebase, SetOptions(merge: true));
+                                        await ventasDB.doc(existingSale['id'].toString()).set(datosParaFirebase, SetOptions(merge: true));
                                       } else {
                                         // Si es una nueva venta, incluye la hora exacta del servidor
                                         datosParaFirebase['fecha'] = FieldValue.serverTimestamp();
@@ -1168,84 +1156,99 @@ class _GastosTabState extends State<GastosTab> {
             ),
           ),
           Expanded(
-            child: _filteredExpenses.isEmpty
-                ? const Center(child: Text('No hay gastos registrados', style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredExpenses.length,
-                    itemBuilder: (context, index) {
-                      final expense = _filteredExpenses[index];
-                      final DateTime date = expense['fecha'] is DateTime
-                          ? expense['fecha']
-                          : DateTime.tryParse(expense['fecha'].toString()) ?? DateTime.now();
-                      const double zeroDefault = 0.0;
-                      final double amountVal = (expense['monto'] as num?)?.toDouble() ?? zeroDefault;
-                      final dateStr = '${date.day}/${date.month}/${date.year}';
-                      final actualIndex = widget.expensesList.indexOf(expense);
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('gastos').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('No hay gastos registrados', style: TextStyle(color: Colors.grey)));
+                }
 
-                      return Card(
-                        color: const Color(0xFFF9F9F9),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
+                final docs = snapshot.data!.docs;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final expenseMap = docs[index].data() as Map<String, dynamic>;
+                    final docId = docs[index].id;
+                    expenseMap['id'] ??= docId;
+
+                    final String concepto = expenseMap['concepto']?.toString() ?? 'Sin concepto';
+                    final String categoria = expenseMap['categoria']?.toString() ?? 'General';
+                    final double monto = (expenseMap['monto'] as num?)?.toDouble() ?? 0.0;
+                    final String metodoPago = expenseMap['metodoPago']?.toString() ?? 'Efectivo';
+
+                    return Card(
+                      color: const Color(0xFFF9F9F9),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              concepto,
+                              style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              '${monto.toStringAsFixed(2)} DOP\$',
+                              style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          title: Text(
-                            expense['concepto']?.toString() ?? '',
-                            style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text(
-                            '$dateStr • ${expense['categoria']} (${expense['metodoPago']})',
-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '-${amountVal.toStringAsFixed(2)} DOP\$',
-                                style: TextStyle(color: Colors.red[700], fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showExpenseModal(context, existingExpense: expense, index: actualIndex);
-                                  } else if (value == 'delete') {
-                                    _confirmDelete(context, actualIndex);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
-                                        SizedBox(width: 8),
-                                        Text('Editar'),
-                                      ],
-                                    ),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                        SizedBox(width: 8),
-                                        Text('Eliminar'),
-                                      ],
-                                    ),
-                                  ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text('Categoría: $categoria • Método: $metodoPago', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.grey),
+                          onSelected: (value) async {
+                            if (value == 'edit') {
+                              _showExpenseModal(context, existingExpense: expenseMap, index: index);
+                            } else if (value == 'delete') {
+                              await FirebaseFirestore.instance.collection('gastos').doc(docId).delete();
+                              widget.onUpdate();
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
+                                  SizedBox(width: 8),
+                                  Text('Editar'),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                  SizedBox(width: 8),
+                                  Text('Eliminar'),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1370,7 +1373,7 @@ class _GastosTabState extends State<GastosTab> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           final cleanedAmount = amountController.text.replaceAll(',', '.').trim();
                           final double? amount = double.tryParse(cleanedAmount);
 
@@ -1382,41 +1385,66 @@ class _GastosTabState extends State<GastosTab> {
                             setModalState(() => errorMessage = 'Ingresa un monto válido mayor a 0.');
                             return;
                           }
+                          // --- 1. INICIO DEL GUARDADO EN FIREBASE ---
+                                    try {
+                                      CollectionReference gastosDB = FirebaseFirestore.instance.collection('gastos');
+                                      
+                                      Map<String, dynamic> datosParaFirebase = {
+                                        'concepto': conceptController.text.trim(),
+                                        'categoria': selectedCategory,
+                                        'monto': amount,
+                                        'metodoPago': selectedPayment,
+                                      };
 
-                          final expenseData = {
-                            'id': existingExpense?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                            'concepto': conceptController.text.trim(),
-                            'categoria': selectedCategory,
-                            'monto': amount,
-                            'fecha': existingExpense?['fecha'] ?? DateTime.now(),
-                            'metodoPago': selectedPayment,
-                          };
+                                      if (existingExpense != null && existingExpense['id'] != null) {
+                                        // Si estás editando, actualiza el documento en Firebase
+                                        await gastosDB.doc(existingExpense['id'].toString()).set(datosParaFirebase, SetOptions(merge: true));
+                                      } else {
+                                        // Si es un nuevo gasto, incluye la hora exacta del servidor
+                                        datosParaFirebase['fecha'] = FieldValue.serverTimestamp();
+                                        await gastosDB.add(datosParaFirebase);
+                                      }
+                                    } catch (e) {
+                                      print('Error al guardar gasto en Firebase: $e');
+                                    }
+                                    // --- FIN DEL GUARDADO EN FIREBASE ---
 
-                          if (existingExpense != null && index != null && index >= 0 && index < widget.expensesList.length) {
-                            widget.expensesList[index] = expenseData;
-                          } else {
-                            widget.expensesList.insert(0, expenseData);
-                          }
-                          widget.onUpdate();
-                          Navigator.pop(context);
-                        },
-                        child: Text(
-                          existingExpense == null ? 'GUARDAR GASTO' : 'ACTUALIZAR GASTO',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                    // --- 2. GUARDADO LOCAL (Mantiene tu interfaz funcionando sin recargar) ---
+                                    final expenseData = {
+                                      'id': existingExpense?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                                      'concepto': conceptController.text.trim(),
+                                      'categoria': selectedCategory,
+                                      'monto': amount,
+                                      'fecha': existingExpense?['fecha'] ?? DateTime.now(),
+                                      'metodoPago': selectedPayment,
+                                    };
+
+                                    if (existingExpense != null && index != null && index >= 0 && index < widget.expensesList.length) {
+                                      widget.expensesList[index] = expenseData;
+                                    } else {
+                                      widget.expensesList.insert(0, expenseData);
+                                    }
+                                    
+                                    widget.onUpdate();
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text(
+                                    existingExpense == null ? 'GUARDAR GASTO' : 'ACTUALIZAR GASTO',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
+                      );
+                    },
+                  );
+                },
+              );
+            }
+          }
 
 // ---------------------------------------------------------
 // PESTAÑA 4: PRODUCTOS (Gestión Dinámica y Expansión)
@@ -1455,9 +1483,15 @@ class _ProductosTabState extends State<ProductosTab> {
                   children: [
                     const Text('Catálogo Activo', style: TextStyle(color: Colors.grey, fontSize: 12)),
                     const SizedBox(height: 4),
-                    Text(
-                      '${widget.productsList.length} Productos',
-                      style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 18),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('productos').snapshots(),
+                      builder: (context, snapshot) {
+                        final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                        return Text(
+                          '$count Productos',
+                          style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 18),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -1466,102 +1500,123 @@ class _ProductosTabState extends State<ProductosTab> {
             ),
           ),
           Expanded(
-            child: widget.productsList.isEmpty
-                ? const Center(child: Text('No hay productos en el catálogo', style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: widget.productsList.length,
-                    itemBuilder: (context, index) {
-                      final product = widget.productsList[index];
-                      final double itemPrice = (product['price'] as num?)?.toDouble() ?? 0.0;
-                      final double itemCost = (product['cost'] as num?)?.toDouble() ?? 0.0;
-                      final int itemStock = (product['stock'] as num?)?.toInt() ?? 0;
-                      final double itemMargin = itemPrice - itemCost;
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('productos').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('No hay productos en el catálogo', style: TextStyle(color: Colors.grey)));
+                }
 
-                      return Card(
-                        color: const Color(0xFFF9F9F9),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          title: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                product['name']?.toString() ?? '',
-                                style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
+                final docs = snapshot.data!.docs;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    // SOLUCIÓN: Crear una copia del mapa para evitar el error de solo lectura
+                    final rawData = docs[index].data() as Map<String, dynamic>? ?? {};
+                    final productDataMap = Map<String, dynamic>.from(rawData);
+                    
+                    final docId = docs[index].id;
+                    productDataMap['id'] = docId;
+
+                    final double itemPrice = (productDataMap['price'] as num?)?.toDouble() ?? 0.0;
+                    final double itemCost = (productDataMap['cost'] as num?)?.toDouble() ?? 0.0;
+                    final int itemStock = (productDataMap['stock'] as num?)?.toInt() ?? 0;
+                    final double itemMargin = itemPrice - itemCost;
+
+                    return Card(
+                      color: const Color(0xFFF9F9F9),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Color(0xFFE8DAD3), width: 1),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              productDataMap['name']?.toString() ?? 'Sin nombre',
+                              style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              itemStock > 0 ? 'Stock: $itemStock' : 'Agotado',
+                              style: TextStyle(
+                                color: itemStock > 0 ? Colors.blue[700] : Colors.red,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
                               ),
-                              Text(
-                                itemStock > 0 ? 'Stock: $itemStock' : 'Agotado',
-                                style: TextStyle(
-                                  color: itemStock > 0 ? Colors.blue[700] : Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                            ),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text(productDataMap['description']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Costo est.: ${itemCost.toStringAsFixed(2)} DOP\$ • Margen: ${itemMargin.toStringAsFixed(2)} DOP\$',
+                              style: TextStyle(color: Colors.green[800], fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${itemPrice.toStringAsFixed(2)} DOP\$',
+                              style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, color: Colors.grey),
+                              onSelected: (value) async {
+                                if (value == 'edit') {
+                                  _showProductModal(context, existingProduct: productDataMap, index: index);
+                                } else if (value == 'delete') {
+                                  await FirebaseFirestore.instance.collection('productos').doc(docId).delete();
+                                  widget.onUpdate();
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
+                                      SizedBox(width: 8),
+                                      Text('Editar'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text(product['description']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Costo est.: ${itemCost.toStringAsFixed(2)} DOP\$ • Margen: ${itemMargin.toStringAsFixed(2)} DOP\$',
-                                style: TextStyle(color: Colors.green[800], fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${itemPrice.toStringAsFixed(2)} DOP\$',
-                                style: const TextStyle(color: Color(0xFF4A2A18), fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: Colors.grey),
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showProductModal(context, existingProduct: product, index: index);
-                                  } else if (value == 'delete') {
-                                    _confirmDeleteProduct(context, index);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4A2A18)),
-                                        SizedBox(width: 8),
-                                        Text('Editar'),
-                                      ],
-                                    ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                      SizedBox(width: 8),
+                                      Text('Eliminar'),
+                                    ],
                                   ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                        SizedBox(width: 8),
-                                        Text('Eliminar'),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1691,60 +1746,71 @@ class _ProductosTabState extends State<ProductosTab> {
                       Text(errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600)),
                     ],
                     const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4A2A18),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        onPressed: () {
-                          final double localCost = double.tryParse(costController.text.replaceAll(',', '.')) ?? 0.0;
-                          final double localPrice = double.tryParse(priceController.text.replaceAll(',', '.')) ?? 0.0;
-                          final int localStock = int.tryParse(stockController.text) ?? 0;
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A2A18),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () async {
+                            final localCost = double.tryParse(costController.text.replaceAll(',', '.')) ?? 0.0;
+                            final localPrice = double.tryParse(priceController.text.replaceAll(',', '.')) ?? 0.0;
+                            final int localStock = int.tryParse(stockController.text) ?? 0;
 
-                          if (nameController.text.trim().isEmpty) {
-                            setModalState(() => errorMessage = 'El nombre es obligatorio.');
-                            return;
-                          }
-                          if (localPrice <= 0) {
-                            setModalState(() => errorMessage = 'El precio debe ser mayor a 0.');
-                            return;
-                          }
+                            if (nameController.text.trim().isEmpty) {
+                              setModalState(() => errorMessage = 'El nombre es obligatorio.');
+                              return;
+                            }
+                            if (localPrice <= 0) {
+                              setModalState(() => errorMessage = 'El precio debe ser mayor a 0.');
+                              return;
+                            }
 
-                          final productData = {
-                            'id': existingProduct?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                            'name': nameController.text.trim(),
-                            'description': descController.text.trim(),
-                            'cost': localCost,
-                            'price': localPrice,
-                            'stock': localStock,
-                          };
+                            final productData = {
+                              'id': existingProduct?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                              'name': nameController.text.trim(),
+                              'description': descController.text.trim(),
+                              'cost': localCost,
+                              'price': localPrice,
+                              'stock': localStock,
+                            };
 
-                          if (existingProduct != null && index != null && index >= 0 && index < widget.productsList.length) {
-                            widget.productsList[index] = productData;
-                          } else {
-                            widget.productsList.insert(0, productData);
-                          }
-                          widget.onUpdate();
-                          Navigator.pop(context);
-                        },
-                        child: Text(
-                          existingProduct == null ? 'GUARDAR PRODUCTO' : 'ACTUALIZAR PRODUCTO',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                            try {
+                              CollectionReference productosDB = FirebaseFirestore.instance.collection('productos');
+                              if (existingProduct != null && existingProduct['id'] != null) {
+                                await productosDB.doc(existingProduct['id'].toString()).set(productData, SetOptions(merge: true));
+                              } else {
+                                await productosDB.add(productData);
+                              }
+                            } catch (e) {
+                              print('Error al guardar producto en Firebase: $e');
+                            }
+
+                            if (existingProduct != null && index != null && index >= 0 && index < widget.productsList.length) {
+                              widget.productsList[index] = productData;
+                            } else {
+                              widget.productsList.insert(0, productData);
+                            }
+                            widget.onUpdate();
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          child: Text(
+                            existingProduct == null ? 'GUARDAR PRODUCTO' : 'ACTUALIZAR PRODUCTO',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
+                      const SizedBox(height: 20),
+                    ], // Cierra Column children
+                  ), // Cierra Column
+                ), // Cierra SingleChildScrollView
+              ); // Cierra Padding
+            }, // Cierra builder de StatefulBuilder
+          ); // Cierra StatefulBuilder
+        }, // Cierra builder de showModalBottomSheet
+      ); // Cierra showModalBottomSheet
+    } // Cierra _showProductModal
+  } // Cierra _ProductosTabState
