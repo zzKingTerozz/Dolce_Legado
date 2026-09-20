@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -915,7 +916,7 @@ class _VentasTabState extends State<VentasTab> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedPayment,
+                            initialValue: selectedPayment,
                             decoration: const InputDecoration(labelText: 'Pago', hintText: 'Seleccionar'),
                             items: ['Transferencia', 'Efectivo'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                             onChanged: (val) => setModalState(() => selectedPayment = val),
@@ -924,7 +925,7 @@ class _VentasTabState extends State<VentasTab> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedStatus,
+                            initialValue: selectedStatus,
                             decoration: const InputDecoration(labelText: 'Estado', hintText: 'Seleccionar'),
                             items: ['Completada', 'Pendiente'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                             onChanged: (val) => setModalState(() => selectedStatus = val),
@@ -1005,7 +1006,7 @@ class _VentasTabState extends State<VentasTab> {
 
                                 if (confirm != true) return; 
 
-                                if (isEditing && existingSale != null) {
+                                if (isEditing) {
                                   for (var oldItem in existingSale['items']) {
                                     final pIndex = widget.productsList.indexWhere((p) => p['name'] == oldItem['name']);
                                     if (pIndex != -1) {
@@ -1025,42 +1026,68 @@ class _VentasTabState extends State<VentasTab> {
                                   }
                                 });
 
-                                final saleData = {
-                                  'id': existingSale?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                                  'cliente': clientController.text.trim(),
-                                  'fecha': existingSale?['fecha'] ?? DateTime.now(),
-                                  'estado': selectedStatus!,
-                                  'metodoPago': selectedPayment!,
-                                  'items': itemsList,
-                                  'total': totalVenta,
-                                };
+                                // --- 1. INICIO DEL GUARDADO EN FIREBASE ---
+                                    try {
+                                      CollectionReference ventasDB = FirebaseFirestore.instance.collection('ventas');
+                                      
+                                      Map<String, dynamic> datosParaFirebase = {
+                                        'cliente': clientController.text.trim(),
+                                        'estado': selectedStatus!,
+                                        'metodoPago': selectedPayment!,
+                                        'items': itemsList,
+                                        'total': totalVenta,
+                                      };
 
-                                // Ajuste fecha sintaxis segura:
-                                saleData['fecha'] = existingSale?['fecha'] ?? DateTime.now();
+                                      if (isEditing && existingSale?['id'] != null) {
+                                        // Si estás editando, actualiza el documento en Firebase
+                                        await ventasDB.doc(existingSale!['id'].toString()).set(datosParaFirebase, SetOptions(merge: true));
+                                      } else {
+                                        // Si es una nueva venta, incluye la hora exacta del servidor
+                                        datosParaFirebase['fecha'] = FieldValue.serverTimestamp();
+                                        await ventasDB.add(datosParaFirebase);
+                                      }
+                                    } catch (e) {
+                                      print('Error al guardar en Firebase: $e');
+                                    }
+                                    // --- FIN DEL GUARDADO EN FIREBASE ---
 
-                                if (isEditing && index != null) {
-                                  widget.salesList[index] = saleData;
-                                } else {
-                                  widget.salesList.insert(0, saleData);
-                                }
-                                
-                                widget.onUpdate();
-                                if (context.mounted) Navigator.pop(context);
-                              },
-                        child: Text(existingSale == null ? 'GUARDAR VENTA' : 'ACTUALIZAR VENTA', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ),
+                                    // --- 2. GUARDADO LOCAL (Mantiene tu interfaz funcionando sin recargar) ---
+                                    final saleData = {
+                                      'id': existingSale?['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                                      'cliente': clientController.text.trim(),
+                                      'fecha': existingSale?['fecha'] ?? DateTime.now(),
+                                      'estado': selectedStatus!,
+                                      'metodoPago': selectedPayment!,
+                                      'items': itemsList,
+                                      'total': totalVenta,
+                                    };
+
+                                    // Ajuste fecha sintaxis segura:
+                                    saleData['fecha'] = existingSale?['fecha'] ?? DateTime.now();
+
+                                    if (isEditing && index != null) {
+                                      widget.salesList[index] = saleData;
+                                    } else {
+                                      widget.salesList.insert(0, saleData);
+                                    }
+                                    
+                                    widget.onUpdate();
+                                    if (context.mounted) Navigator.pop(context);
+                                  },
+                            child: Text(existingSale == null ? 'GUARDAR VENTA' : 'ACTUALIZAR VENTA', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         );
-      },
-    );
-  }
-} // <--- Faltaba esta llave de cierre para _VentasTabState
+      }
+    } // <--- Faltaba esta llave de cierre para _VentasTabState
 
 // ---------------------------------------------------------
 // PESTAÑA 3: GASTOS (Registro Categorizado y Control Operativo)
@@ -1308,7 +1335,7 @@ class _GastosTabState extends State<GastosTab> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: _categories.contains(selectedCategory) ? selectedCategory : _categories.first,
+                            initialValue: _categories.contains(selectedCategory) ? selectedCategory : _categories.first,
                             decoration: const InputDecoration(labelText: 'Categoría'),
                             items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                             onChanged: (val) {
@@ -1319,7 +1346,7 @@ class _GastosTabState extends State<GastosTab> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedPayment,
+                            initialValue: selectedPayment,
                             decoration: const InputDecoration(labelText: 'Método de Pago'),
                             items: ['Transferencia', 'Efectivo'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                             onChanged: (val) {

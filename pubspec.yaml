@@ -33,6 +33,8 @@ dependencies:
   fl_chart: ^0.68.0
   shared_preferences: ^2.2.3
   google_fonts: ^6.2.1 # <--- Agrega esta línea
+  firebase_core: ^4.15.0
+  cloud_firestore: ^6.10.0
 
 dev_dependencies:
   flutter_test:
