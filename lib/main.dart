@@ -10,13 +10,20 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Evita que la app colapse si el navegador bloquea la descarga de Google Fonts
   GoogleFonts.config.allowRuntimeFetching = true;
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Intentamos iniciar Firebase de forma segura
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print("🟢 FIREBASE INICIADO CORRECTAMENTE");
+  } catch (e) {
+    // Si Firebase falla en producción, atrapamos el error para leerlo
+    print("🔴 ERROR DE FIREBASE AL INICIAR: $e");
+  }
 
+  // La app arrancará de todos modos para no dejar la pantalla en blanco
   runApp(const DolceLegadoApp());
 }
 
