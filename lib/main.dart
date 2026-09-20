@@ -10,12 +10,12 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Evita que la app colapse si el navegador bloquea la descarga de Google Fonts
   GoogleFonts.config.allowRuntimeFetching = true;
 
-  // COMENTA ESTAS LÍNEAS PARA DESACTIVAR FIREBASE TEMPORALMENTE
-  // await Firebase.initializeApp(
-  //   options: DefaultFirebaseOptions.currentPlatform,
-  // );
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   runApp(const DolceLegadoApp());
 }
