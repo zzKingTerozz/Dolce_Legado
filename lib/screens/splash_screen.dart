@@ -50,15 +50,14 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/images/Logo.png', width: 220, height: 220, fit: BoxFit.contain),
-            const SizedBox(height: 10),
-            Text(
-              'Dolce Legado',
-              style: GoogleFonts.greatVibes(
-                color: const Color(0xFF4A2A18), 
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
-              ),
+            Image.asset(
+              'assets/images/Logo.png', 
+              width: 220, 
+              height: 220, 
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(Icons.cake, size: 100, color: Color(0xFF4A2A18));
+              },
             ),
           ],
         ),
