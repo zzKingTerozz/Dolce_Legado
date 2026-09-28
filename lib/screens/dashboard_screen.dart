@@ -792,11 +792,13 @@ class _VentasTabState extends State<VentasTab> {
 
   void _showSaleModal(BuildContext context, {Map<String, dynamic>? existingSale, int? index}) {
     final clientController = TextEditingController(text: existingSale?['cliente'] ?? '');
-    // Inician en null para estar en blanco al crear, o cargan si se está editando
     String? selectedPayment = existingSale?['metodoPago'];
     String? selectedStatus = existingSale?['estado'];
 
-    Map<String, int> selectedQuantities = {for (var item in widget.productsList) item['name']: 0};
+    // NUEVO: Mapas dinámicos que no dependen de la lista estática
+    Map<String, int> selectedQuantities = {};
+    Map<String, double> productPrices = {}; 
+
     if (existingSale != null) {
       for (var item in existingSale['items']) {
         selectedQuantities[item['name']] = item['qty'];
@@ -810,12 +812,12 @@ class _VentasTabState extends State<VentasTab> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            // NUEVO: Cálculo basado en el mapa dinámico
             double calculateTotal() {
               double total = 0.0;
-              for (var item in widget.productsList) {
-                final qty = selectedQuantities[item['name']] ?? 0;
-                total += qty * (item['price'] as double);
-              }
+              selectedQuantities.forEach((name, qty) {
+                total += qty * (productPrices[name] ?? 0.0);
+              });
               return total;
             }
 
@@ -845,59 +847,79 @@ class _VentasTabState extends State<VentasTab> {
                     const Text('Seleccionar Productos:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4A2A18))),
                     const SizedBox(height: 8),
                     
-                    // --- LISTA DE PRODUCTOS CON VALIDACIÓN DE STOCK ---
-                    ...widget.productsList.map((product) {
-                      final name = product['name'] as String;
-                      final price = (product['price'] as num).toDouble();
-                      final currentStock = (product['stock'] ?? 0) as int;
-                      
-                      int availableStock = currentStock;
-                      if (existingSale != null) {
-                        final oldItem = (existingSale['items'] as List).firstWhere((i) => i['name'] == name, orElse: () => <String, dynamic>{});
-                        if (oldItem.isNotEmpty) availableStock += (oldItem['qty'] as int);
-                      }
-                      
-                      final qty = selectedQuantities[name] ?? 0;
-                      final isOutOfStock = availableStock <= 0;
+                    // NUEVO: StreamBuilder para cargar productos en tiempo real
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('productos').snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        
+                        final productDocs = snapshot.data!.docs;
+                        if (productDocs.isEmpty) {
+                          return const Text('No hay productos disponibles.', style: TextStyle(color: Colors.grey));
+                        }
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                        return Column(
+                          children: productDocs.map((doc) {
+                            final product = doc.data() as Map<String, dynamic>;
+                            final name = product['name'] as String;
+                            final price = (product['price'] as num).toDouble();
+                            final currentStock = (product['stock'] ?? 0) as int;
+                            
+                            // Guardar precio en tiempo real para calcular el total
+                            productPrices[name] = price;
+
+                            int availableStock = currentStock;
+                            if (existingSale != null) {
+                              final oldItem = (existingSale['items'] as List).firstWhere((i) => i['name'] == name, orElse: () => <String, dynamic>{});
+                              if (oldItem.isNotEmpty) availableStock += (oldItem['qty'] as int);
+                            }
+                            
+                            final qty = selectedQuantities[name] ?? 0;
+                            final isOutOfStock = availableStock <= 0;
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('$name (${price.toStringAsFixed(0)} DOP\$)'),
-                                  Text(
-                                    isOutOfStock ? 'Agotado' : 'Disponibles: $availableStock',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: isOutOfStock ? Colors.red : Colors.grey,
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('$name (${price.toStringAsFixed(0)} DOP\$)'),
+                                        Text(
+                                          isOutOfStock ? 'Agotado' : 'Disponibles: $availableStock',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: isOutOfStock ? Colors.red : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
                                     ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline),
+                                        onPressed: qty > 0 ? () => setModalState(() => selectedQuantities[name] = qty - 1) : null,
+                                      ),
+                                      Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      IconButton(
+                                        icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4A2A18)),
+                                        onPressed: qty < availableStock ? () => setModalState(() => selectedQuantities[name] = qty + 1) : null,
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                  onPressed: qty > 0 ? () => setModalState(() => selectedQuantities[name] = qty - 1) : null,
-                                ),
-                                Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                IconButton(
-                                  icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4A2A18)),
-                                  onPressed: qty < availableStock ? () => setModalState(() => selectedQuantities[name] = qty + 1) : null,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
                     
                     const SizedBox(height: 16),
                     Row(
@@ -950,11 +972,11 @@ class _VentasTabState extends State<VentasTab> {
                                 final totalVenta = calculateTotal();
                                 final isEditing = existingSale != null;
 
+                                // 1. PRIMERO: Creas el desglose (antes del dialog para que se muestre en él)
                                 List<TextSpan> desgloseSpans = [];
                                 selectedQuantities.forEach((nombre, cantidad) {
                                   if (cantidad > 0) {
-                                    final producto = widget.productsList.firstWhere((p) => p['name'] == nombre);
-                                    final precio = (producto['price'] as num).toDouble();
+                                    final precio = productPrices[nombre] ?? 0.0;
                                     desgloseSpans.add(TextSpan(
                                       text: '$cantidad x $nombre = ${(cantidad * precio).toStringAsFixed(2)} DOP\$\n',
                                       style: const TextStyle(fontSize: 14, color: Colors.black54),
@@ -962,6 +984,7 @@ class _VentasTabState extends State<VentasTab> {
                                   }
                                 });
 
+                                // 2. LUEGO: Tu código original del modal de confirmación
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (context) => AlertDialog(
@@ -992,27 +1015,26 @@ class _VentasTabState extends State<VentasTab> {
                                   ),
                                 );
 
-                                if (confirm != true) return; 
+                                // 3. VALIDACIÓN: Si el usuario presiona "Revisar" o cierra el modal, detenemos la función aquí
+                                if (confirm != true) return;
 
-                                if (isEditing) {
-                                  for (var oldItem in existingSale['items']) {
-                                    final pIndex = widget.productsList.indexWhere((p) => p['name'] == oldItem['name']);
-                                    if (pIndex != -1) {
-                                      widget.productsList[pIndex]['stock'] = (widget.productsList[pIndex]['stock'] ?? 0) + (oldItem['qty'] as int);
-                                    }
-                                  }
-                                }
-
+                                // 4. AQUÍ PEGAS LA CREACIÓN DE ITEMSLIST (después de confirmar)
                                 final itemsList = <Map<String, dynamic>>[];
                                 selectedQuantities.forEach((key, value) {
                                   if (value > 0) {
+                                    itemsList.add({'name': key, 'qty': value, 'price': productPrices[key]});
+                                    
+                                    // Mantiene tu lógica local actual de descontar inventario
                                     final pIndex = widget.productsList.indexWhere((p) => p['name'] == key);
                                     if (pIndex != -1) {
                                       widget.productsList[pIndex]['stock'] = (widget.productsList[pIndex]['stock'] ?? 0) - value;
-                                      itemsList.add({'name': key, 'qty': value, 'price': widget.productsList[pIndex]['price']});
                                     }
                                   }
                                 });
+
+                                // 5. FINALMENTE: Tu código para subir a Firebase
+                                // if (isEditing) { ... actualiza el documento en Firestore usando itemsList ... }
+                                // else { ... crea el nuevo documento en Firestore usando itemsList ... }
 
                                 // --- 1. INICIO DEL GUARDADO EN FIREBASE ---
                                     try {
